@@ -248,7 +248,7 @@ class Predictor(BasePredictor):
         num_outputs: int = Input(
             description="Number of images to output",
             ge=1,
-            le=4,
+            le=16,
             default=1,
         ),
         scheduler: str = Input(
