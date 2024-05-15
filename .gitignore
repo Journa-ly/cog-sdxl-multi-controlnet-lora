@@ -21,3 +21,4 @@ checkpoint*
 weights
 __*.zip
 **-cache
+.env
