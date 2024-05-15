@@ -28,7 +28,32 @@ from weights_downloader import WeightsDownloader
 from weights_manager import WeightsManager
 from controlnet import ControlNet
 from sizing_strategy import SizingStrategy
+import logging
+from dotenv import load_dotenv
+from huggingface_hub import login
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# Load environment variables from the .env file
+load_dotenv()
+
+# Retrieve the token from the environment variables
+hf_token = os.getenv('HF_TOKEN')
+azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
+journa_container_name = os.getenv("JOURNA_CONTAINER_NAME")
+journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
+#journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
+sas_token = os.getenv("SAS_TOKEN")
+
+if not hf_token:
+    logging.error("HF_TOKEN is not set. Please ensure it's specified in your environment.")
+else:
+    try:
+        login(token=hf_token)
+        logging.info("Login succeeded")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
 
 SDXL_MODEL_CACHE = "./sdxl-cache"
 REFINER_MODEL_CACHE = "./refiner-cache"
@@ -39,6 +64,7 @@ REFINER_URL = (
     "https://weights.replicate.delivery/default/sdxl/refiner-no-vae-no-encoder-1.0.tar"
 )
 SAFETY_URL = "https://weights.replicate.delivery/default/sdxl/safety-1.0.tar"
+LORA_URL = "https://your-lora-weights-url"
 
 
 class KarrasDPM:
@@ -81,7 +107,7 @@ class Predictor(BasePredictor):
 
         return pipe
 
-    def setup(self, weights: Optional[Path] = None):
+    def setup(self, weights: Optional[Path] = None, lora_weights: Optional[str] = None):
         """Load the model into memory to make running multiple predictions efficient"""
 
         start = time.time()
@@ -159,6 +185,13 @@ class Predictor(BasePredictor):
         self.refiner.to("cuda")
 
         self.controlnet = ControlNet(self)
+
+        # Download and load Journa LoRA weights if specified
+        if lora_weights:
+            blob_service_client = WeightsDownloader.get_blob_service_client_sas(SAS_TOKEN)
+            WeightsDownloader.download_blob_to_file(blob_service_client, JOURNA_CONTAINER_NAME, JOURNA_BLOB_NAME, JOURNA_MODEL_LOCAL_PATH)
+            self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
+            self.is_lora = True
 
         print("setup took: ", time.time() - start)
 
@@ -381,7 +414,9 @@ class Predictor(BasePredictor):
 
         if lora_weights:
             lora_load_start = time.time()
-            self.load_trained_weights(lora_weights, self.txt2img_pipe)
+            blob_service_client = WeightsDownloader.get_blob_service_client_sas(SAS_TOKEN)
+            WeightsDownloader.download_blob_to_file(blob_service_client, JOURNA_CONTAINER_NAME, lora_weights, JOURNA_MODEL_LOCAL_PATH)
+            self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
             print(f"lora load took: {time.time() - lora_load_start:.2f}s")
 
         # OOMs can leave vae in bad state
