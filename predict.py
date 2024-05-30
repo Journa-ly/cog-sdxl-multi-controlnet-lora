@@ -41,7 +41,7 @@ load_dotenv()
 # Retrieve the token from the environment variables
 hf_token = os.getenv("HF_TOKEN")
 azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
-JOURNA_LORAS = os.getenv("JOURNA_CONTAINER_NAME")
+JOURNA_CONTAINER_NAME = os.getenv("JOURNA_CONTAINER_NAME")
 journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
 # journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
 SAS_TOKEN = os.getenv("SAS_TOKEN")
