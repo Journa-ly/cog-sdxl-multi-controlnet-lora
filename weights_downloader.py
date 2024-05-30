@@ -61,9 +61,11 @@ class WeightsDownloader:
 
     @staticmethod
     def download_blobs_in_container(
-        blob_service_client: BlobServiceClient, container_name: str, dest_dir: str
+        blob_service_client: BlobServiceClient, 
+        container_name: str, 
+        dest_dir: str
     ):
-        try:
+        Ptry:
             container_client = blob_service_client.get_container_client(container_name)
             blobs = container_client.list_blobs()
             os.makedirs(dest_dir, exist_ok=True)
@@ -77,7 +79,8 @@ class WeightsDownloader:
                 )
                 with open(dest_path, "wb") as file:
                     download_stream = blob_client.download_blob()
-                    file.write(download_stream.readall())
+                    for chunk in download_stream.chunks():
+                        file.write(chunk)
                 logging.info(f"Download completed for blob {blob.name}")
         except Exception as e:
             logging.error(

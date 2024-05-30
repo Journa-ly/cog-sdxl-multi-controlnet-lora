@@ -200,11 +200,11 @@ class Predictor(BasePredictor):
 
             # Download all blobs in the specified container to the local cache directory
             WeightsDownloader.download_blobs_in_container(
-                blob_service_client, JOURNA_CONTAINER_NAME, SDXL_MODEL_CACHE
+                blob_service_client, JOURNA_CONTAINER_NAME, JOURNA_MODEL_CACHE
             )
 
             # Load the downloaded weights into the model pipeline
-            self.load_trained_weights(SDXL_MODEL_CACHE, self.txt2img_pipe)
+            self.load_trained_weights(JOURNA_MODEL_CACHE, self.txt2img_pipe)
 
             # Set the flag indicating that LoRA weights are in use
             self.is_lora = True
