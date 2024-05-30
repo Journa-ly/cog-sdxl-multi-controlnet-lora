@@ -11,6 +11,7 @@ JOURNA_BLOB_NAME = os.getenv("JOURNA_BLOB_NAME")
 JOURNA_MODEL_LOCAL_PATH = os.getenv("JOURNA_MODEL_LOCAL_PATH")
 SAS_TOKEN = os.getenv("SAS_TOKEN")
 
+
 class WeightsDownloader:
     @staticmethod
     def download_if_not_exists(url, dest):
@@ -25,7 +26,7 @@ class WeightsDownloader:
         subprocess.check_call(["pget", "-x", url, dest], close_fds=False)
         print("downloading took: ", time.time() - start)
 
-    #--Nick
+    # --Nick
 
     @staticmethod
     # Function to get BlobServiceClient
@@ -35,13 +36,20 @@ class WeightsDownloader:
 
     @staticmethod
     # Function to download blob to a file
-    def download_blob_to_file(blob_service_client: BlobServiceClient, container_name: str, blob_name: str, dest):
+    def download_blob_to_file(
+        blob_service_client: BlobServiceClient,
+        container_name: str,
+        blob_name: str,
+        dest,
+    ):
         try:
             logging.info(f"Starting download: {container_name}/{blob_name} to {dest}")
-            
+
             # Create blob client
-            blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
-            
+            blob_client = blob_service_client.get_blob_client(
+                container=container_name, blob=blob_name
+            )
+
             # Download the blob to the specified file
             with open(dest, "wb") as file:
                 download_stream = blob_client.download_blob()
@@ -50,3 +58,28 @@ class WeightsDownloader:
                 logging.info(f"Download completed for blob {blob_name}.")
         except Exception as e:
             logging.error(f"Failed to download blob {blob_name}: {e}")
+
+    @staticmethod
+    def download_blobs_in_container(
+        blob_service_client: BlobServiceClient, container_name: str, dest_dir: str
+    ):
+        try:
+            container_client = blob_service_client.get_container_client(container_name)
+            blobs = container_client.list_blobs()
+            os.makedirs(dest_dir, exist_ok=True)
+
+            for blob in blobs:
+                dest_path = os.path.join(dest_dir, blob.name)
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                logging.info(f"Downloading blob {blob.name} to {dest_path}")
+                blob_client = blob_service_client.get_blob_client(
+                    container=container_name, blob=blob.name
+                )
+                with open(dest_path, "wb") as file:
+                    download_stream = blob_client.download_blob()
+                    file.write(download_stream.readall())
+                logging.info(f"Download completed for blob {blob.name}")
+        except Exception as e:
+            logging.error(
+                f"Failed to download blobs in container {container_name}: {e}"
+            )

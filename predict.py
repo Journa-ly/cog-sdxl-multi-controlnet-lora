@@ -39,15 +39,17 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
 # Retrieve the token from the environment variables
-hf_token = os.getenv('HF_TOKEN')
+hf_token = os.getenv("HF_TOKEN")
 azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
 journa_container_name = os.getenv("JOURNA_CONTAINER_NAME")
 journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
-#journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
+# journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
 sas_token = os.getenv("SAS_TOKEN")
 
 if not hf_token:
-    logging.error("HF_TOKEN is not set. Please ensure it's specified in your environment.")
+    logging.error(
+        "HF_TOKEN is not set. Please ensure it's specified in your environment."
+    )
 else:
     try:
         login(token=hf_token)
@@ -64,7 +66,9 @@ REFINER_URL = (
     "https://weights.replicate.delivery/default/sdxl/refiner-no-vae-no-encoder-1.0.tar"
 )
 SAFETY_URL = "https://weights.replicate.delivery/default/sdxl/safety-1.0.tar"
-LORA_URL = "https://your-lora-weights-url"
+
+# New constants for Journa cache
+JOURNA_MODEL_CACHE = "./journa_cache"
 
 
 class KarrasDPM:
@@ -128,6 +132,10 @@ class Predictor(BasePredictor):
 
         WeightsDownloader.download_if_not_exists(SDXL_URL, SDXL_MODEL_CACHE)
 
+        # Journa weights download
+        print("Downloading Journa LoRAs")
+        WeightsDownloader.download_if_not_exists(JOURNA_LORAS, SDXL_MODEL_CACHE)
+
         print("Loading sdxl txt2img pipeline...")
         self.txt2img_pipe = DiffusionPipeline.from_pretrained(
             SDXL_MODEL_CACHE,
@@ -188,8 +196,13 @@ class Predictor(BasePredictor):
 
         # Download and load Journa LoRA weights if specified
         if lora_weights:
-            blob_service_client = WeightsDownloader.get_blob_service_client_sas(SAS_TOKEN)
-            WeightsDownloader.download_blob_to_file(blob_service_client, JOURNA_CONTAINER_NAME, JOURNA_BLOB_NAME, JOURNA_MODEL_LOCAL_PATH)
+            blob_service_client = WeightsDownloader.get_blob_service_client_sas(
+                SAS_TOKEN
+            )
+            WeightsDownloader.download_blobs_in_container(
+                blob_service_client, JOURNA_CONTAINER_NAME, SDXL_MODEL_CACHE
+            )
+            WeightsDownloader.download_blob_to_file()
             self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
             self.is_lora = True
 
@@ -227,11 +240,11 @@ class Predictor(BasePredictor):
         ),
         width: int = Input(
             description="Width of output image",
-            default=768,
+            default=1024,
         ),
         height: int = Input(
             description="Height of output image",
-            default=768,
+            default=1024,
         ),
         sizing_strategy: str = Input(
             description="Decide how to resize images – use width/height, resize based on input image or control image",
@@ -414,8 +427,15 @@ class Predictor(BasePredictor):
 
         if lora_weights:
             lora_load_start = time.time()
-            blob_service_client = WeightsDownloader.get_blob_service_client_sas(SAS_TOKEN)
-            WeightsDownloader.download_blob_to_file(blob_service_client, JOURNA_CONTAINER_NAME, lora_weights, JOURNA_MODEL_LOCAL_PATH)
+            blob_service_client = WeightsDownloader.get_blob_service_client_sas(
+                SAS_TOKEN
+            )
+            WeightsDownloader.download_blob_to_file(
+                blob_service_client,
+                JOURNA_CONTAINER_NAME,
+                lora_weights,
+                JOURNA_MODEL_LOCAL_PATH,
+            )
             self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
             print(f"lora load took: {time.time() - lora_load_start:.2f}s")
 
