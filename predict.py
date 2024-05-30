@@ -41,10 +41,11 @@ load_dotenv()
 # Retrieve the token from the environment variables
 hf_token = os.getenv("HF_TOKEN")
 azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
-journa_container_name = os.getenv("JOURNA_CONTAINER_NAME")
+JOURNA_LORAS = os.getenv("JOURNA_CONTAINER_NAME")
 journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
 # journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
-sas_token = os.getenv("SAS_TOKEN")
+sas_token = :os.getenv("SAS_TOKEN")
+
 
 if not hf_token:
     logging.error(
@@ -202,8 +203,7 @@ class Predictor(BasePredictor):
             WeightsDownloader.download_blobs_in_container(
                 blob_service_client, JOURNA_CONTAINER_NAME, SDXL_MODEL_CACHE
             )
-            WeightsDownloader.download_blob_to_file()
-            self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
+            self.load_trained_weights(SDXL_MODEL_CACHE, self.txt2img_pipe)
             self.is_lora = True
 
         print("setup took: ", time.time() - start)
