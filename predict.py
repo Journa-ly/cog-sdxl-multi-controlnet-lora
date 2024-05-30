@@ -133,10 +133,6 @@ class Predictor(BasePredictor):
 
         WeightsDownloader.download_if_not_exists(SDXL_URL, SDXL_MODEL_CACHE)
 
-        # Journa weights download
-        print("Downloading Journa LoRAs")
-        WeightsDownloader.download_if_not_exists(JOURNA_LORAS, SDXL_MODEL_CACHE)
-
         print("Loading sdxl txt2img pipeline...")
         self.txt2img_pipe = DiffusionPipeline.from_pretrained(
             SDXL_MODEL_CACHE,
