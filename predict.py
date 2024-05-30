@@ -44,7 +44,7 @@ azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
 JOURNA_LORAS = os.getenv("JOURNA_CONTAINER_NAME")
 journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
 # journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
-sas_token = os.getenv("SAS_TOKEN")
+SAS_TOKEN = os.getenv("SAS_TOKEN")
 
 
 if not hf_token:
