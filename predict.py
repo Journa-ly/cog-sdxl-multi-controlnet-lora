@@ -44,7 +44,7 @@ azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
 JOURNA_LORAS = os.getenv("JOURNA_CONTAINER_NAME")
 journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
 # journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
-sas_token = :os.getenv("SAS_TOKEN")
+sas_token = os.getenv("SAS_TOKEN")
 
 
 if not hf_token:
@@ -196,15 +196,28 @@ class Predictor(BasePredictor):
         self.controlnet = ControlNet(self)
 
         # Download and load Journa LoRA weights if specified
-        if lora_weights:
+        try:
+            # Get the BlobServiceClient using the provided SAS token
             blob_service_client = WeightsDownloader.get_blob_service_client_sas(
                 SAS_TOKEN
             )
+
+            # Download all blobs in the specified container to the local cache directory
             WeightsDownloader.download_blobs_in_container(
                 blob_service_client, JOURNA_CONTAINER_NAME, SDXL_MODEL_CACHE
             )
+
+            # Load the downloaded weights into the model pipeline
             self.load_trained_weights(SDXL_MODEL_CACHE, self.txt2img_pipe)
+
+            # Set the flag indicating that LoRA weights are in use
             self.is_lora = True
+        except Exception as e:
+            # Log an error message if downloading or loading fails
+            logging.error(f"Failed to download Journa LoRA weights: {e}")
+
+            # Raise a runtime error to indicate the failure
+            raise RuntimeError("Could not download and load Journa LoRA weights") from e
 
         print("setup took: ", time.time() - start)
 
