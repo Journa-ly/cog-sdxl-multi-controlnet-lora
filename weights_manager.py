@@ -17,10 +17,9 @@ class WeightsManager:
     def load_trained_weights(self, weights, pipe):
         from no_init import no_init_or_tensor
 
-        # weights can be a URLPath, which behaves in unexpected ways
         weights = str(weights)
         if self.predictor.tuned_weights == weights:
-            print("skipping loading .. weights already loaded")
+            print("Skipping loading... weights already loaded")
             return
 
         self.predictor.tuned_weights = weights
@@ -30,7 +29,7 @@ class WeightsManager:
         else:
             local_weights_cache = weights
 
-        # If the path ends with .safetensors, treat it as a direct file path
+        # Check if the local_weights_cache is a direct file path to LoRA weights
         if local_weights_cache.endswith(".safetensors"):
             print("Loading Unet LoRA from specific .safetensors file")
 
@@ -65,7 +64,9 @@ class WeightsManager:
                     module = LoRAAttnProcessor2_0(
                         hidden_size=hidden_size,
                         cross_attention_dim=cross_attention_dim,
-                        rank=name_rank_map[name],
+                        rank=name_rank_map.get(
+                            name, 4
+                        ),  # Default to rank 4 if not found
                     )
                 unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
 
@@ -75,13 +76,13 @@ class WeightsManager:
             self.predictor.is_lora = True
 
         else:
-            # load UNET
+            # Load UNET
             print("Loading fine-tuned model")
             self.predictor.is_lora = False
 
             maybe_unet_path = os.path.join(local_weights_cache, "unet.safetensors")
             if not os.path.exists(maybe_unet_path):
-                print("Does not have Unet. assume we are using LoRA")
+                print("Does not have Unet. Assume we are using LoRA")
                 self.predictor.is_lora = True
 
             if not self.predictor.is_lora:
@@ -129,21 +130,23 @@ class WeightsManager:
                         module = LoRAAttnProcessor2_0(
                             hidden_size=hidden_size,
                             cross_attention_dim=cross_attention_dim,
-                            rank=name_rank_map[name],
+                            rank=name_rank_map.get(
+                                name, 4
+                            ),  # Default to rank 4 if not found
                         )
                     unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
 
                 unet.set_attn_processor(unet_lora_attn_procs)
                 unet.load_state_dict(tensors, strict=False)
 
-            # load text
+            # Load text
             handler = TokenEmbeddingsHandler(
                 [pipe.text_encoder, pipe.text_encoder_2],
                 [pipe.tokenizer, pipe.tokenizer_2],
             )
             handler.load_embeddings(os.path.join(local_weights_cache, "embeddings.pti"))
 
-            # load params
+            # Load params
             with open(
                 os.path.join(local_weights_cache, "special_params.json"), "r"
             ) as f:
