@@ -5,10 +5,14 @@ from safetensors.torch import load_file
 from dataset_and_utils import TokenEmbeddingsHandler
 from weights import WeightsDownloadCache
 
+
 class WeightsManager:
     def __init__(self, predictor):
         self.predictor = predictor
         self.weights_cache = WeightsDownloadCache()
+
+    def is_url(self, path):
+        return path.startswith("http://") or path.startswith("https://")
 
     def load_trained_weights(self, weights, pipe):
         from no_init import no_init_or_tensor
@@ -21,7 +25,10 @@ class WeightsManager:
 
         self.predictor.tuned_weights = weights
 
-        local_weights_cache = self.weights_cache.ensure(weights)
+        if self.is_url(weights):
+            local_weights_cache = self.weights_cache.ensure(weights)
+        else:
+            local_weights_cache = weights
 
         # load UNET
         print("Loading fine-tuned model")
