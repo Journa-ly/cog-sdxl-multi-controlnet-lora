@@ -75,6 +75,9 @@ class WeightsManager:
 
             self.predictor.is_lora = True
 
+            # Set an empty token_map if loading directly from .safetensors file
+            self.predictor.token_map = {}
+
         else:
             # Load UNET
             print("Loading fine-tuned model")
