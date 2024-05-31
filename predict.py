@@ -40,12 +40,6 @@ load_dotenv()
 
 # Retrieve the token from the environment variables
 hf_token = os.getenv("HF_TOKEN")
-azure_account_url = os.getenv("AZURE_ACCOUNT_URL")
-JOURNA_CONTAINER_NAME = os.getenv("JOURNA_CONTAINER_NAME")
-journa_blob_name = os.getenv("JOURNA_BLOB_NAME")
-# journa_model_local_path = os.getenv("JOURNA_MODEL_LOCAL_PATH")
-SAS_TOKEN = os.getenv("SAS_TOKEN")
-
 
 if not hf_token:
     logging.error(
@@ -68,8 +62,9 @@ REFINER_URL = (
 )
 SAFETY_URL = "https://weights.replicate.delivery/default/sdxl/safety-1.0.tar"
 
-# New constants for Journa cache
+JOURNA_CONTAINER_NAME = os.getenv("JOURNA_CONTAINER_NAME")
 JOURNA_MODEL_CACHE = "./journa_cache"
+SAS_TOKEN = os.getenv("SAS_TOKEN")
 
 
 class KarrasDPM:
@@ -204,10 +199,10 @@ class Predictor(BasePredictor):
             )
 
             # Load the downloaded weights into the model pipeline
-            self.load_trained_weights(JOURNA_MODEL_CACHE, self.txt2img_pipe)
+            # self.load_trained_weights(JOURNA_MODEL_CACHE, self.txt2img_pipe)
 
             # Set the flag indicating that LoRA weights are in use
-            self.is_lora = True
+            # self.is_lora = True
         except Exception as e:
             # Log an error message if downloading or loading fails
             logging.error(f"Failed to download Journa LoRA weights: {e}")
@@ -436,16 +431,7 @@ class Predictor(BasePredictor):
 
         if lora_weights:
             lora_load_start = time.time()
-            blob_service_client = WeightsDownloader.get_blob_service_client_sas(
-                SAS_TOKEN
-            )
-            WeightsDownloader.download_blob_to_file(
-                blob_service_client,
-                JOURNA_CONTAINER_NAME,
-                lora_weights,
-                JOURNA_MODEL_LOCAL_PATH,
-            )
-            self.load_trained_weights(JOURNA_MODEL_LOCAL_PATH, self.txt2img_pipe)
+            self.load_trained_weights(lora_weights, self.txt2img_pipe)
             print(f"lora load took: {time.time() - lora_load_start:.2f}s")
 
         # OOMs can leave vae in bad state
@@ -583,6 +569,8 @@ class Predictor(BasePredictor):
             common_args["height"] = height
 
         if self.is_lora:
+            lora_load_start = time.time()
+            self.load_trained_weights(lora_weights, self.txt2img_pipe)
             sdxl_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
 
         inference_start = time.time()

@@ -8,7 +8,6 @@ from azure.storage.blob import BlobServiceClient
 AZURE_ACCOUNT_URL = os.getenv("AZURE_ACCOUNT_URL")
 JOURNA_CONTAINER_NAME = os.getenv("JOURNA_CONTAINER_NAME")
 JOURNA_BLOB_NAME = os.getenv("JOURNA_BLOB_NAME")
-JOURNA_MODEL_LOCAL_PATH = os.getenv("JOURNA_MODEL_LOCAL_PATH")
 SAS_TOKEN = os.getenv("SAS_TOKEN")
 
 
@@ -32,7 +31,7 @@ class WeightsDownloader:
     # Function to get BlobServiceClient
     def get_blob_service_client_sas(sas_token: str) -> BlobServiceClient:
         logging.info("Creating BlobServiceClient with SAS token.")
-        return BlobServiceClient(account_url=AZURE_ACCOUNT_URL, credential=sas_token)
+        return BlobServiceClient(account_url=AZURE_ACCOUNT_URL, credential=SAS_TOKEN)
 
     @staticmethod
     # Function to download blob to a file
