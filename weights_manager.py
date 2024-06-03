@@ -34,7 +34,7 @@ class WeightsManager:
             print("Loading Unet LoRA from specific .safetensors file")
 
             unet = pipe.unet
-            print = f"loading LoRA: {local_weights_cache}"
+            print(f"loading LoRA: {local_weights_cache}")
             tensors = load_file(local_weights_cache)
 
             unet_lora_attn_procs = {}
