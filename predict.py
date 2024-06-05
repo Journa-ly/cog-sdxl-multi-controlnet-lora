@@ -138,6 +138,7 @@ class Predictor(BasePredictor):
         self.is_lora = False
         if weights or os.path.exists("./trained-model"):
             self.load_trained_weights(weights, self.txt2img_pipe)
+            print(f"Successfully loaded: {weights}")
 
         self.txt2img_pipe.to("cuda")
 
