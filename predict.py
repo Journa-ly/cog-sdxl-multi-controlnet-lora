@@ -587,10 +587,15 @@ class Predictor(BasePredictor):
         if self.is_lora:
             lora_load_start = time.time()
             # self.load_trained_weights(lora_weights, self.txt2img_pipe)
-            sdxl_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
+            # sdxl_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
 
         inference_start = time.time()
-        output = pipe(**common_args, **sdxl_kwargs, **controlnet_args)
+        output = pipe(
+            **common_args,
+            **sdxl_kwargs,
+            **controlnet_args,
+            cross_attention_kwargs={"scale": lora_scale},
+        )
         print(f"inference took: {time.time() - inference_start:.2f}s")
 
         if refine == "base_image_refiner":
