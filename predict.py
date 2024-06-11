@@ -84,8 +84,8 @@ SCHEDULERS = {
 
 
 class Predictor(BasePredictor):
-    def load_trained_weights(self, weights, pipe):
-        self.weights_manager.load_trained_weights(weights, pipe)
+    def load_trained_weights(self, weights, pipe, scale=1.0):
+        self.weights_manager.load_trained_weights(weights, pipe, scale)
 
     def build_controlnet_pipeline(self, pipeline_class, controlnet_models):
         pipe = pipeline_class.from_pretrained(
@@ -135,6 +135,7 @@ class Predictor(BasePredictor):
             use_safetensors=True,
             variant="fp16",
         )
+
         self.is_lora = False
         if weights or os.path.exists("./trained-model"):
             self.load_trained_weights(weights, self.txt2img_pipe)
@@ -308,6 +309,10 @@ class Predictor(BasePredictor):
             le=1.0,
             default=0.6,
         ),
+        local_lora_scales: str = Input(
+            description="Scales for locally loaded LoRAs from './trained-model'. Format: 'model1:scale1,model2:scale2'.",
+            default="",
+        ),
         lora_weights: str = Input(
             description="Replicate LoRA weights to use. Leave blank to use the default weights.",
             default=None,
@@ -430,9 +435,21 @@ class Predictor(BasePredictor):
             controlnet_3_image,
         ] = resized_images
 
+        if local_lora_scales:
+            local_lora_scales_dict = {}
+            for item in local_lora_scales.split(","):
+                name, scale = item.split(":")
+                local_lora_scales_dict[name] = float(scale)
+
+            for name, scale in local_lora_scales_dict.items():
+                weight_path = os.path.join("./trained-model", name)
+                if os.path.exists(weight_path):
+                    self.load_trained_weights(weight_path, self.txt2img_pipe, scale)
+                    print(f"Loaded {name} with scale {scale}")
+
         if lora_weights:
             lora_load_start = time.time()
-            self.load_trained_weights(lora_weights, self.txt2img_pipe)
+            self.load_trained_weights(lora_weights, self.txt2img_pipe, lora_scale)
             print(f"lora load took: {time.time() - lora_load_start:.2f}s")
 
         # OOMs can leave vae in bad state
@@ -571,7 +588,7 @@ class Predictor(BasePredictor):
 
         if self.is_lora:
             lora_load_start = time.time()
-            self.load_trained_weights(lora_weights, self.txt2img_pipe)
+            # self.load_trained_weights(lora_weights, self.txt2img_pipe)
             sdxl_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
 
         inference_start = time.time()

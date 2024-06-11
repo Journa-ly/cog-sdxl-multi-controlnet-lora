@@ -74,6 +74,9 @@ class WeightsManager:
             unet.set_attn_processor(unet_lora_attn_procs)
             unet.load_state_dict(tensors, strict=False)
 
+            # Apply scale to cross_attention_kwargs
+            pipe.cross_attention_kwargs = {"scale": scale}
+
             self.predictor.is_lora = True
 
             # Set an empty token_map if loading directly from .safetensors file
@@ -142,6 +145,9 @@ class WeightsManager:
 
                 unet.set_attn_processor(unet_lora_attn_procs)
                 unet.load_state_dict(tensors, strict=False)
+
+                # Apply scale to cross_attention_kwargs
+                pipe.cross_attention_kwargs = {"scale": scale}
 
             # Load text
             handler = TokenEmbeddingsHandler(
