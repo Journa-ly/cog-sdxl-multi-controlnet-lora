@@ -75,7 +75,7 @@ class WeightsManager:
             unet.load_state_dict(tensors, strict=False)
 
             # Apply scale to cross_attention_kwargs
-            pipe.cross_attention_kwargs = {"scale": scale}
+            # pipe.cross_attention_kwargs = {"scale": scale}
 
             self.predictor.is_lora = True
 
@@ -147,7 +147,7 @@ class WeightsManager:
                 unet.load_state_dict(tensors, strict=False)
 
                 # Apply scale to cross_attention_kwargs
-                pipe.cross_attention_kwargs = {"scale": scale}
+                # pipe.cross_attention_kwargs = {"scale": scale}
 
             # Load text
             handler = TokenEmbeddingsHandler(
