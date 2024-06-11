@@ -1,3 +1,6 @@
+import json
+import os
+from diffusers.models.attention_processor import LoRAAttnProcessor2_0
 from diffusers.models.attention_processor import LoRAAttnAddedKVProcessor
 from safetensors.torch import load_file
 from dataset_and_utils import TokenEmbeddingsHandler
@@ -67,15 +70,11 @@ class WeightsManager:
                             name, 4
                         ),  # Default to rank 4 if not found
                     )
+                module.scale = scale  # Set the scale directly
                 unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
 
             unet.set_attn_processor(unet_lora_attn_procs)
             unet.load_state_dict(tensors, strict=False)
-
-            # Apply scale to LoRA layers
-            for name, module in unet.named_modules():
-                if isinstance(module, LoRAAttnAddedKVProcessor):
-                    module.set_lora_scale(scale)
 
             self.predictor.is_lora = True
 
@@ -134,7 +133,7 @@ class WeightsManager:
                         block_id = int(name[len("down_blocks.")])
                         hidden_size = unet.config.block_out_channels[block_id]
                     with no_init_or_tensor():
-                        module = LoRAAttnAddedKVProcessor(
+                        module = LoRAAttnProcessor2_0(
                             hidden_size=hidden_size,
                             cross_attention_dim=cross_attention_dim,
                             rank=name_rank_map.get(
@@ -146,10 +145,9 @@ class WeightsManager:
                 unet.set_attn_processor(unet_lora_attn_procs)
                 unet.load_state_dict(tensors, strict=False)
 
-                # Apply scale to LoRA layers
-                for name, module in unet.named_modules():
-                    if isinstance(module, LoRAAttnAddedKVProcessor):
-                        module.set_lora_scale(scale)
+            pipe.unet.set_default_attn_processor(unet_lora_attn_procs)
+            for name, module in unet_lora_attn_procs.items():
+                module.scale = scale
 
             # Load text
             handler = TokenEmbeddingsHandler(
