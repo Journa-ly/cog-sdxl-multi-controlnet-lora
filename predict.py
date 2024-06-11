@@ -309,9 +309,11 @@ class Predictor(BasePredictor):
             le=1.0,
             default=0.6,
         ),
-        local_lora_scales: str = Input(
-            description="Scales for locally loaded LoRAs from './trained-model'. Format: 'model1:scale1,model2:scale2'.",
-            default="",
+        local_lora_scales: float = Input(
+            description="Scales for locally loaded LoRAs from './trained-model'",
+            ge=0.0,
+            le=1.0,
+            default=0.4,
         ),
         lora_weights: str = Input(
             description="Replicate LoRA weights to use. Leave blank to use the default weights.",
