@@ -309,7 +309,7 @@ class Predictor(BasePredictor):
             le=1.0,
             default=0.6,
         ),
-        local_lora_scales: float = Input(
+        local_lora_scale: float = Input(
             description="Scales for locally loaded LoRAs from './trained-model'",
             ge=0.0,
             le=1.0,
@@ -437,17 +437,13 @@ class Predictor(BasePredictor):
             controlnet_3_image,
         ] = resized_images
 
-        if local_lora_scales:
-            local_lora_scales_dict = {}
-            for item in local_lora_scales.split(","):
-                name, scale = item.split(":")
-                local_lora_scales_dict[name] = float(scale)
-
-            for name, scale in local_lora_scales_dict.items():
-                weight_path = os.path.join("./trained-model", name)
-                if os.path.exists(weight_path):
-                    self.load_trained_weights(weight_path, self.txt2img_pipe, scale)
-                    print(f"Loaded {name} with scale {scale}")
+        if local_lora_scale:
+            weight_path = os.path.join("./trained-model")
+            if os.path.exists(weight_path):
+                self.load_trained_weights(
+                    weight_path, self.txt2img_pipe, local_lora_scale
+                )
+                print(f"Loaded local LoRA with scale {local_lora_scale}")
 
         if lora_weights:
             lora_load_start = time.time()
