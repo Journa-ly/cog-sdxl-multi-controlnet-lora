@@ -1,5 +1,7 @@
-from diffusers.models.attention_processor import AttnProcessor2_0
-from diffusers.utils import LoraLoaderMixin
+from diffusers.models.attention_processor import LoRAAttnAddedKVProcessor
+from safetensors.torch import load_file
+from dataset_and_utils import TokenEmbeddingsHandler
+from weights import WeightsDownloadCache
 
 
 class WeightsManager:
@@ -31,13 +33,48 @@ class WeightsManager:
 
             unet = pipe.unet
             print(f"loading LoRA: {local_weights_cache}")
+            tensors = load_file(local_weights_cache)
 
-            # Load LoRA weights using the recommended method
-            LoraLoaderMixin.load_lora_weights(unet, local_weights_cache)
+            unet_lora_attn_procs = {}
+            name_rank_map = {}
+            for tk, tv in tensors.items():
+                if tk.endswith("up.weight"):
+                    proc_name = ".".join(tk.split(".")[:-3])
+                    r = tv.shape[1]
+                    name_rank_map[proc_name] = r
+
+            for name, attn_processor in unet.attn_processors.items():
+                cross_attention_dim = (
+                    None
+                    if name.endswith("attn1.processor")
+                    else unet.config.cross_attention_dim
+                )
+                if name.startswith("mid_block"):
+                    hidden_size = unet.config.block_out_channels[-1]
+                elif name.startswith("up_blocks"):
+                    block_id = int(name[len("up_blocks.")])
+                    hidden_size = list(reversed(unet.config.block_out_channels))[
+                        block_id
+                    ]
+                elif name.startswith("down_blocks"):
+                    block_id = int(name[len("down_blocks.")])
+                    hidden_size = unet.config.block_out_channels[block_id]
+                with no_init_or_tensor():
+                    module = LoRAAttnAddedKVProcessor(
+                        hidden_size=hidden_size,
+                        cross_attention_dim=cross_attention_dim,
+                        rank=name_rank_map.get(
+                            name, 4
+                        ),  # Default to rank 4 if not found
+                    )
+                unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
+
+            unet.set_attn_processor(unet_lora_attn_procs)
+            unet.load_state_dict(tensors, strict=False)
 
             # Apply scale to LoRA layers
             for name, module in unet.named_modules():
-                if isinstance(module, AttnProcessor2_0):
+                if isinstance(module, LoRAAttnAddedKVProcessor):
                     module.set_lora_scale(scale)
 
             self.predictor.is_lora = True
@@ -68,14 +105,50 @@ class WeightsManager:
 
                 unet = pipe.unet
 
-                # Load LoRA weights using the recommended method
-                LoraLoaderMixin.load_lora_weights(
-                    unet, os.path.join(local_weights_cache, "lora.safetensors")
+                tensors = load_file(
+                    os.path.join(local_weights_cache, "lora.safetensors")
                 )
+
+                unet_lora_attn_procs = {}
+                name_rank_map = {}
+                for tk, tv in tensors.items():
+                    if tk.endswith("up.weight"):
+                        proc_name = ".".join(tk.split(".")[:-3])
+                        r = tv.shape[1]
+                        name_rank_map[proc_name] = r
+
+                for name, attn_processor in unet.attn_processors.items():
+                    cross_attention_dim = (
+                        None
+                        if name.endswith("attn1.processor")
+                        else unet.config.cross_attention_dim
+                    )
+                    if name.startswith("mid_block"):
+                        hidden_size = unet.config.block_out_channels[-1]
+                    elif name.startswith("up_blocks"):
+                        block_id = int(name[len("up_blocks.")])
+                        hidden_size = list(reversed(unet.config.block_out_channels))[
+                            block_id
+                        ]
+                    elif name.startswith("down_blocks"):
+                        block_id = int(name[len("down_blocks.")])
+                        hidden_size = unet.config.block_out_channels[block_id]
+                    with no_init_or_tensor():
+                        module = LoRAAttnAddedKVProcessor(
+                            hidden_size=hidden_size,
+                            cross_attention_dim=cross_attention_dim,
+                            rank=name_rank_map.get(
+                                name, 4
+                            ),  # Default to rank 4 if not found
+                        )
+                    unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
+
+                unet.set_attn_processor(unet_lora_attn_procs)
+                unet.load_state_dict(tensors, strict=False)
 
                 # Apply scale to LoRA layers
                 for name, module in unet.named_modules():
-                    if isinstance(module, AttnProcessor2_0):
+                    if isinstance(module, LoRAAttnAddedKVProcessor):
                         module.set_lora_scale(scale)
 
             # Load text
