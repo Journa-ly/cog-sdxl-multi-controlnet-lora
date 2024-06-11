@@ -14,7 +14,7 @@ class WeightsManager:
     def is_url(self, path):
         return path.startswith("http://") or path.startswith("https://")
 
-    def load_trained_weights(self, weights, pipe):
+    def load_trained_weights(self, weights, pipe, scale=1.0):
         from no_init import no_init_or_tensor
 
         weights = str(weights)
