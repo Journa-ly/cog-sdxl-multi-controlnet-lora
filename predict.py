@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from cog import BasePredictor, Input, Path
 import os
 import time
