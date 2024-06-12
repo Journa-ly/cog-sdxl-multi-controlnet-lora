@@ -1,7 +1,6 @@
 import json
 import os
-from diffusers.models.attention_processor import LoRAAttnProcessor2_0
-from safetensors.torch import load_file
+from diffusers import DiffusionPipeline
 from dataset_and_utils import TokenEmbeddingsHandler
 from weights import WeightsDownloadCache
 
@@ -10,162 +9,35 @@ class WeightsManager:
     def __init__(self, predictor):
         self.predictor = predictor
         self.weights_cache = WeightsDownloadCache()
+        self.lora_scales = {}
+        self.adapters = []
 
     def is_url(self, path):
         return path.startswith("http://") or path.startswith("https://")
 
-    def load_trained_weights(self, weights, pipe, scale=1.0):
-        from no_init import no_init_or_tensor
+    def set_lora_scales(self, scales):
+        self.lora_scales.update(scales)
+        self.apply_lora_scales()
 
-        weights = str(weights)
-        if self.predictor.tuned_weights == weights:
-            print("Skipping loading... weights already loaded")
-            return
+    def apply_lora_scales(self):
+        self.predictor.pipe.set_adapters(self.adapters, self.lora_scales)
 
-        self.predictor.tuned_weights = weights
-
-        if self.is_url(weights):
-            local_weights_cache = self.weights_cache.ensure(weights)
+    def load_lora_weight(self, weight, scale, adapter_name):
+        if self.is_url(weight):
+            local_weights_cache = self.weights_cache.ensure(weight)
         else:
-            local_weights_cache = weights
+            local_weights_cache = weight
 
-        # Check if the local_weights_cache is a direct file path to LoRA weights
-        if local_weights_cache.endswith(".safetensors"):
-            print("Loading Unet LoRA from specific .safetensors file")
+        self.predictor.pipe.load_lora_weights(
+            local_weights_cache, adapter_name=adapter_name
+        )
+        self.lora_scales[adapter_name] = scale
+        self.adapters.append(adapter_name)
+        self.apply_lora_scales()
 
-            unet = pipe.unet
-            print(f"loading LoRA: {local_weights_cache}")
-            tensors = load_file(local_weights_cache)
+    def load_trained_weights(self, weights_list, scales_list):
+        for weights, scale in zip(weights_list, scales_list):
+            adapter_name = os.path.basename(weights).split(".")[0]
+            self.load_lora_weight(weights, scale, adapter_name)
 
-            unet_lora_attn_procs = {}
-            name_rank_map = {}
-            for tk, tv in tensors.items():
-                if tk.endswith("up.weight"):
-                    proc_name = ".".join(tk.split(".")[:-3])
-                    r = tv.shape[1]
-                    name_rank_map[proc_name] = r
-
-            for name, attn_processor in unet.attn_processors.items():
-                cross_attention_dim = (
-                    None
-                    if name.endswith("attn1.processor")
-                    else unet.config.cross_attention_dim
-                )
-                if name.startswith("mid_block"):
-                    hidden_size = unet.config.block_out_channels[-1]
-                elif name.startswith("up_blocks"):
-                    block_id = int(name[len("up_blocks.")])
-                    hidden_size = list(reversed(unet.config.block_out_channels))[
-                        block_id
-                    ]
-                elif name.startswith("down_blocks"):
-                    block_id = int(name[len("down_blocks.")])
-                    hidden_size = unet.config.block_out_channels[block_id]
-                with no_init_or_tensor():
-                    module = LoRAAttnProcessor2_0(
-                        hidden_size=hidden_size,
-                        cross_attention_dim=cross_attention_dim,
-                        rank=name_rank_map.get(
-                            name, 4
-                        ),  # Default to rank 4 if not found
-                    )
-                unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
-
-            unet.set_attn_processor(unet_lora_attn_procs)
-            unet.load_state_dict(tensors, strict=False)
-
-            # Set the scale directly
-            for name, module in unet_lora_attn_procs.items():
-                module.scale = scale
-
-            self.predictor.is_lora = True
-
-            # Set an empty token_map if loading directly from .safetensors file
-            self.predictor.token_map = {}
-
-        else:
-            # Load UNET
-            print("Loading fine-tuned model")
-            self.predictor.is_lora = False
-
-            maybe_unet_path = os.path.join(local_weights_cache, "unet.safetensors")
-            if not os.path.exists(maybe_unet_path):
-                print("Does not have Unet. Assume we are using LoRA")
-                self.predictor.is_lora = True
-
-            if not self.predictor.is_lora:
-                print("Loading Unet")
-
-                new_unet_params = load_file(
-                    os.path.join(local_weights_cache, "unet.safetensors")
-                )
-                pipe.unet.load_state_dict(new_unet_params, strict=False)
-
-            else:
-                print("Loading Unet LoRA")
-
-                unet = pipe.unet
-
-                tensors = load_file(
-                    os.path.join(local_weights_cache, "lora.safetensors")
-                )
-
-                unet_lora_attn_procs = {}
-                name_rank_map = {}
-                for tk, tv in tensors.items():
-                    if tk.endswith("up.weight"):
-                        proc_name = ".".join(tk.split(".")[:-3])
-                        r = tv.shape[1]
-                        name_rank_map[proc_name] = r
-
-                for name, attn_processor in unet.attn_processors.items():
-                    cross_attention_dim = (
-                        None
-                        if name.endswith("attn1.processor")
-                        else unet.config.cross_attention_dim
-                    )
-                    if name.startswith("mid_block"):
-                        hidden_size = unet.config.block_out_channels[-1]
-                    elif name.startswith("up_blocks"):
-                        block_id = int(name[len("up_blocks.")])
-                        hidden_size = list(reversed(unet.config.block_out_channels))[
-                            block_id
-                        ]
-                    elif name.startswith("down_blocks"):
-                        block_id = int(name[len("down_blocks.")])
-                        hidden_size = unet.config.block_out_channels[block_id]
-                    with no_init_or_tensor():
-                        module = LoRAAttnProcessor2_0(
-                            hidden_size=hidden_size,
-                            cross_attention_dim=cross_attention_dim,
-                            rank=name_rank_map.get(
-                                name, 4
-                            ),  # Default to rank 4 if not found
-                        )
-                    unet_lora_attn_procs[name] = module.to("cuda", non_blocking=True)
-
-                unet.set_attn_processor(unet_lora_attn_procs)
-                unet.load_state_dict(tensors, strict=False)
-
-            # Set the scale directly
-            for name, module in unet_lora_attn_procs.items():
-                module.scale = scale
-
-            # Apply the attention processors to the UNet
-            pipe.unet.set_default_attn_processor(unet_lora_attn_procs)
-
-            # Load text
-            handler = TokenEmbeddingsHandler(
-                [pipe.text_encoder, pipe.text_encoder_2],
-                [pipe.tokenizer, pipe.tokenizer_2],
-            )
-            handler.load_embeddings(os.path.join(local_weights_cache, "embeddings.pti"))
-
-            # Load params
-            with open(
-                os.path.join(local_weights_cache, "special_params.json"), "r"
-            ) as f:
-                params = json.load(f)
-            self.predictor.token_map = params
-
-        self.predictor.tuned_model = True
+        self.predictor.is_lora = True

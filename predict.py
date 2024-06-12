@@ -1,25 +1,10 @@
+from typing import List, Optional
+from cog import BasePredictor, Input, Path
 import os
 import time
-from typing import List, Optional
-
 import numpy as np
 import torch
-from cog import BasePredictor, Input, Path
-from diffusers import (
-    DDIMScheduler,
-    DiffusionPipeline,
-    DPMSolverMultistepScheduler,
-    EulerAncestralDiscreteScheduler,
-    EulerDiscreteScheduler,
-    HeunDiscreteScheduler,
-    PNDMScheduler,
-    StableDiffusionXLImg2ImgPipeline,
-    StableDiffusionXLInpaintPipeline,
-    StableDiffusionXLControlNetPipeline,
-    StableDiffusionXLControlNetInpaintPipeline,
-    StableDiffusionXLControlNetImg2ImgPipeline,
-)
-
+from diffusers import DiffusionPipeline
 from diffusers.pipelines.stable_diffusion.safety_checker import (
     StableDiffusionSafetyChecker,
 )
@@ -84,32 +69,11 @@ SCHEDULERS = {
 
 
 class Predictor(BasePredictor):
-    def load_trained_weights(self, weights, pipe, scale=1.0):
-        self.weights_manager.load_trained_weights(weights, pipe, scale)
-
-    def build_controlnet_pipeline(self, pipeline_class, controlnet_models):
-        pipe = pipeline_class.from_pretrained(
-            SDXL_MODEL_CACHE,
-            torch_dtype=torch.float16,
-            use_safetensors=True,
-            variant="fp16",
-            vae=self.txt2img_pipe.vae,
-            text_encoder=self.txt2img_pipe.text_encoder,
-            text_encoder_2=self.txt2img_pipe.text_encoder_2,
-            tokenizer=self.txt2img_pipe.tokenizer,
-            tokenizer_2=self.txt2img_pipe.tokenizer_2,
-            unet=self.txt2img_pipe.unet,
-            scheduler=self.txt2img_pipe.scheduler,
-            controlnet=self.controlnet.get_models(controlnet_models),
-        )
-
-        pipe.to("cuda")
-
-        return pipe
+    def load_trained_weights(self, weights_list, scales_list):
+        self.weights_manager.load_trained_weights(weights_list, scales_list)
 
     def setup(self, weights: Optional[Path] = None, lora_weights: Optional[str] = None):
         """Load the model into memory to make running multiple predictions efficient"""
-
         start = time.time()
         self.sizing_strategy = SizingStrategy()
         self.weights_manager = WeightsManager(self)
@@ -134,14 +98,12 @@ class Predictor(BasePredictor):
             torch_dtype=torch.float16,
             use_safetensors=True,
             variant="fp16",
-        )
+        ).to("cuda")
 
         self.is_lora = False
         if weights or os.path.exists("./trained-model"):
-            self.load_trained_weights(weights, self.txt2img_pipe)
+            self.load_trained_weights([weights], [1.0])
             print(f"Successfully loaded: {weights}")
-
-        self.txt2img_pipe.to("cuda")
 
         print("Loading SDXL img2img pipeline...")
         self.img2img_pipe = StableDiffusionXLImg2ImgPipeline(
@@ -152,8 +114,7 @@ class Predictor(BasePredictor):
             tokenizer_2=self.txt2img_pipe.tokenizer_2,
             unet=self.txt2img_pipe.unet,
             scheduler=self.txt2img_pipe.scheduler,
-        )
-        self.img2img_pipe.to("cuda")
+        ).to("cuda")
 
         print("Loading SDXL inpaint pipeline...")
         self.inpaint_pipe = StableDiffusionXLInpaintPipeline(
@@ -164,18 +125,11 @@ class Predictor(BasePredictor):
             tokenizer_2=self.txt2img_pipe.tokenizer_2,
             unet=self.txt2img_pipe.unet,
             scheduler=self.txt2img_pipe.scheduler,
-        )
-        self.inpaint_pipe.to("cuda")
+        ).to("cuda")
 
         print("Loading SDXL refiner pipeline...")
-        # FIXME(ja): should the vae/text_encoder_2 be loaded from SDXL always?
-        #            - in the case of fine-tuned SDXL should we still?
-        # FIXME(ja): if the answer to above is use VAE/Text_Encoder_2 from fine-tune
-        #            what does this imply about lora + refiner? does the refiner need to know about
-
         WeightsDownloader.download_if_not_exists(REFINER_URL, REFINER_MODEL_CACHE)
 
-        print("Loading refiner pipeline...")
         self.refiner = DiffusionPipeline.from_pretrained(
             REFINER_MODEL_CACHE,
             text_encoder_2=self.txt2img_pipe.text_encoder_2,
@@ -183,75 +137,40 @@ class Predictor(BasePredictor):
             torch_dtype=torch.float16,
             use_safetensors=True,
             variant="fp16",
-        )
-        self.refiner.to("cuda")
+        ).to("cuda")
 
         self.controlnet = ControlNet(self)
 
         # Download and load Journa LoRA weights if specified
         try:
-            # Get the BlobServiceClient using the provided SAS token
             blob_service_client = WeightsDownloader.get_blob_service_client_sas(
                 SAS_TOKEN
             )
-
-            # Download all blobs in the specified container to the local cache directory
             WeightsDownloader.download_blobs_in_container(
                 blob_service_client, JOURNA_CONTAINER_NAME, JOURNA_MODEL_CACHE
             )
-
-            # Load the downloaded weights into the model pipeline
-            # self.load_trained_weights(JOURNA_MODEL_CACHE, self.txt2img_pipe)
-
-            # Set the flag indicating that LoRA weights are in use
-            # self.is_lora = True
         except Exception as e:
-            # Log an error message if downloading or loading fails
             logging.error(f"Failed to download Journa LoRA weights: {e}")
-
-            # Raise a runtime error to indicate the failure
             raise RuntimeError("Could not download and load Journa LoRA weights") from e
 
         print("setup took: ", time.time() - start)
-
-    def run_safety_checker(self, image):
-        safety_checker_input = self.feature_extractor(image, return_tensors="pt").to(
-            "cuda"
-        )
-        np_image = [np.array(val) for val in image]
-        image, has_nsfw_concept = self.safety_checker(
-            images=np_image,
-            clip_input=safety_checker_input.pixel_values.to(torch.float16),
-        )
-        return image, has_nsfw_concept
 
     @torch.inference_mode()
     def predict(
         self,
         prompt: str = Input(
-            description="Input prompt",
-            default="An astronaut riding a rainbow unicorn",
+            description="Input prompt", default="An astronaut riding a rainbow unicorn"
         ),
-        negative_prompt: str = Input(
-            description="Negative Prompt",
-            default="",
-        ),
+        negative_prompt: str = Input(description="Negative Prompt", default=""),
         image: Path = Input(
-            description="Input image for img2img or inpaint mode",
-            default=None,
+            description="Input image for img2img or inpaint mode", default=None
         ),
         mask: Path = Input(
             description="Input mask for inpaint mode. Black areas will be preserved, white areas will be inpainted.",
             default=None,
         ),
-        width: int = Input(
-            description="Width of output image",
-            default=1024,
-        ),
-        height: int = Input(
-            description="Height of output image",
-            default=1024,
-        ),
+        width: int = Input(description="Width of output image", default=1024),
+        height: int = Input(description="Height of output image", default=1024),
         sizing_strategy: str = Input(
             description="Decide how to resize images – use width/height, resize based on input image or control image",
             choices=[
@@ -265,15 +184,10 @@ class Predictor(BasePredictor):
             default="width_height",
         ),
         num_outputs: int = Input(
-            description="Number of images to output",
-            ge=1,
-            le=16,
-            default=1,
+            description="Number of images to output", ge=1, le=16, default=1
         ),
         scheduler: str = Input(
-            description="scheduler",
-            choices=SCHEDULERS.keys(),
-            default="K_EULER",
+            description="scheduler", choices=SCHEDULERS.keys(), default="K_EULER"
         ),
         num_inference_steps: int = Input(
             description="Number of denoising steps", ge=1, le=500, default=30
@@ -303,21 +217,23 @@ class Predictor(BasePredictor):
             description="Applies a watermark to enable determining if an image is generated in downstream applications. If you have other provisions for generating or deploying images safely, you can use this to disable watermarking.",
             default=True,
         ),
-        lora_scale: float = Input(
-            description="LoRA additive scale. Only applicable on trained models.",
+        setup_lora_weight: Optional[str] = Input(
+            description="LoRA weight to be loaded during setup", default=None
+        ),
+        setup_lora_scale: float = Input(
+            description="Scale for LoRA weight loaded during setup",
             ge=0.0,
             le=1.0,
             default=0.6,
         ),
-        local_lora_scale: float = Input(
-            description="Scales for locally loaded LoRAs from './trained-model'",
+        predict_lora_weight: Optional[str] = Input(
+            description="LoRA weight to be loaded during prediction", default=None
+        ),
+        predict_lora_scale: float = Input(
+            description="Scale for LoRA weight loaded during prediction",
             ge=0.0,
             le=1.0,
-            default=0.4,
-        ),
-        lora_weights: str = Input(
-            description="Replicate LoRA weights to use. Leave blank to use the default weights.",
-            default=None,
+            default=0.6,
         ),
         disable_safety_checker: bool = Input(
             description="Disable safety checker for generated images. This feature is only available through the API. See [https://replicate.com/docs/how-does-replicate-work#safety](https://replicate.com/docs/how-does-replicate-work#safety)",
@@ -329,8 +245,7 @@ class Predictor(BasePredictor):
             default="none",
         ),
         controlnet_1_image: Path = Input(
-            description="Input image for first controlnet",
-            default=None,
+            description="Input image for first controlnet", default=None
         ),
         controlnet_1_conditioning_scale: float = Input(
             description="How strong the controlnet conditioning is",
@@ -345,10 +260,7 @@ class Predictor(BasePredictor):
             default=0.0,
         ),
         controlnet_1_end: float = Input(
-            description="When controlnet conditioning ends",
-            ge=0.0,
-            le=1.0,
-            default=1.0,
+            description="When controlnet conditioning ends", ge=0.0, le=1.0, default=1.0
         ),
         controlnet_2: str = Input(
             description="Controlnet",
@@ -356,8 +268,7 @@ class Predictor(BasePredictor):
             default="none",
         ),
         controlnet_2_image: Path = Input(
-            description="Input image for second controlnet",
-            default=None,
+            description="Input image for second controlnet", default=None
         ),
         controlnet_2_conditioning_scale: float = Input(
             description="How strong the controlnet conditioning is",
@@ -372,10 +283,7 @@ class Predictor(BasePredictor):
             default=0.0,
         ),
         controlnet_2_end: float = Input(
-            description="When controlnet conditioning ends",
-            ge=0.0,
-            le=1.0,
-            default=1.0,
+            description="When controlnet conditioning ends", ge=0.0, le=1.0, default=1.0
         ),
         controlnet_3: str = Input(
             description="Controlnet",
@@ -383,8 +291,7 @@ class Predictor(BasePredictor):
             default="none",
         ),
         controlnet_3_image: Path = Input(
-            description="Input image for third controlnet",
-            default=None,
+            description="Input image for third controlnet", default=None
         ),
         controlnet_3_conditioning_scale: float = Input(
             description="How strong the controlnet conditioning is",
@@ -399,10 +306,7 @@ class Predictor(BasePredictor):
             default=0.0,
         ),
         controlnet_3_end: float = Input(
-            description="When controlnet conditioning ends",
-            ge=0.0,
-            le=1.0,
-            default=1.0,
+            description="When controlnet conditioning ends", ge=0.0, le=1.0, default=1.0
         ),
     ) -> List[Path]:
         """Run a single prediction on the model."""
@@ -413,11 +317,7 @@ class Predictor(BasePredictor):
         print(f"Using seed: {seed}")
 
         resize_start = time.time()
-        (
-            width,
-            height,
-            resized_images,
-        ) = self.sizing_strategy.apply(
+        width, height, resized_images = self.sizing_strategy.apply(
             sizing_strategy,
             width,
             height,
@@ -429,26 +329,27 @@ class Predictor(BasePredictor):
         )
         print(f"resize took: {time.time() - resize_start:.2f}s")
 
-        [
+        (
             image,
             mask,
             controlnet_1_image,
             controlnet_2_image,
             controlnet_3_image,
-        ] = resized_images
+        ) = resized_images
 
-        if local_lora_scale:
-            weight_path = os.path.join("./trained-model")
-            if os.path.exists(weight_path):
-                self.load_trained_weights(
-                    weight_path, self.txt2img_pipe, local_lora_scale
-                )
-                print(f"Loaded local LoRA with scale {local_lora_scale}")
-
-        if lora_weights:
+        if setup_lora_weight:
             lora_load_start = time.time()
-            self.load_trained_weights(lora_weights, self.txt2img_pipe, lora_scale)
-            print(f"lora load took: {time.time() - lora_load_start:.2f}s")
+            self.weights_manager.load_lora_weight(
+                setup_lora_weight, setup_lora_scale, "setup_lora"
+            )
+            print(f"Setup LoRA load took: {time.time() - lora_load_start:.2f}s")
+
+        if predict_lora_weight:
+            lora_load_start = time.time()
+            self.weights_manager.load_lora_weight(
+                predict_lora_weight, predict_lora_scale, "predict_lora"
+            )
+            print(f"Prediction LoRA load took: {time.time() - lora_load_start:.2f}s")
 
         # OOMs can leave vae in bad state
         if self.txt2img_pipe.vae.dtype == torch.float32:
@@ -456,7 +357,6 @@ class Predictor(BasePredictor):
 
         sdxl_kwargs = {}
         if self.tuned_model:
-            # consistency with fine-tuning API
             for k, v in self.token_map.items():
                 prompt = prompt.replace(k, v)
         print(f"Prompt: {prompt}")
@@ -562,7 +462,6 @@ class Predictor(BasePredictor):
             sdxl_kwargs["output_type"] = "latent"
 
         if not apply_watermark:
-            # toggles watermark for this prediction
             watermark_cache = pipe.watermark
             pipe.watermark = None
             self.refiner.watermark = None
@@ -578,31 +477,23 @@ class Predictor(BasePredictor):
             "num_inference_steps": num_inference_steps,
         }
 
-        # img2img pipeline doesn’t accept width/height
-        # (img2img with controlnet does)
         if controlnet or not img2img:
             common_args["width"] = width
             common_args["height"] = height
-
-        if self.is_lora:
-            lora_load_start = time.time()
-            # self.load_trained_weights(lora_weights, self.txt2img_pipe)
-            # sdxl_kwargs["cross_attention_kwargs"] = {"scale": lora_scale}
 
         inference_start = time.time()
         output = pipe(
             **common_args,
             **sdxl_kwargs,
             **controlnet_args,
-            cross_attention_kwargs={"scale": lora_scale},
+            cross_attention_kwargs={
+                "scale": 1.0
+            },  # Use a default scale, adjusted by LoRA scales
         )
         print(f"inference took: {time.time() - inference_start:.2f}s")
 
         if refine == "base_image_refiner":
-            refiner_kwargs = {
-                "image": output.images,
-            }
-
+            refiner_kwargs = {"image": output.images}
             common_args_without_dimensions = {
                 k: v for k, v in common_args.items() if k not in ["width", "height"]
             }
