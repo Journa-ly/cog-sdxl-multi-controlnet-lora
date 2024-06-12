@@ -233,7 +233,7 @@ class Predictor(BasePredictor):
             description="Applies a watermark to enable determining if an image is generated in downstream applications. If you have other provisions for generating or deploying images safely, you can use this to disable watermarking.",
             default=True,
         ),
-        setup_lora_weight: Optional[str] = Input(
+        setup_lora_weight: Union[str, None] = Input(
             description="LoRA weight to be loaded during setup", default=None
         ),
         setup_lora_scale: float = Input(
