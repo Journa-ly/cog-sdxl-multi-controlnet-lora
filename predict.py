@@ -242,7 +242,7 @@ class Predictor(BasePredictor):
             le=1.0,
             default=0.6,
         ),
-        predict_lora_weight: Optional[str] = Input(
+        predict_lora_weight: str = Input(
             description="LoRA weight to be loaded during prediction", default=None
         ),
         predict_lora_scale: float = Input(
