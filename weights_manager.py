@@ -20,7 +20,7 @@ class WeightsManager:
         self.apply_lora_scales()
 
     def apply_lora_scales(self):
-        self.predictor.pipe.set_adapters(self.adapters, self.lora_scales)
+        self.predictor.txt2img_pipe.set_adapters(self.adapters, self.lora_scales)
 
     def load_lora_weight(self, weight, scale, adapter_name):
         if self.is_url(weight):
@@ -28,7 +28,7 @@ class WeightsManager:
         else:
             local_weights_cache = weight
 
-        self.predictor.pipe.load_lora_weights(
+        self.predictor.txt2img_pipe.load_lora_weights(
             local_weights_cache, adapter_name=adapter_name
         )
         self.lora_scales[adapter_name] = scale
