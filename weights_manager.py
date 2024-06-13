@@ -3,6 +3,7 @@ import os
 from diffusers import DiffusionPipeline
 from dataset_and_utils import TokenEmbeddingsHandler
 from weights import WeightsDownloadCache
+import peft
 
 
 class WeightsManager:

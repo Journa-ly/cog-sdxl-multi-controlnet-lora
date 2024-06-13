@@ -17,6 +17,8 @@ build:
     - "transformers==4.31.0"
     - "invisible-watermark==0.2.0"
     - "accelerate==0.21.0"
+    - "evaluate==0.4.2"
+    - "peft==0.11.1"
     - "torchvision==0.15.2"
     - "numpy==1.25.1"
     - "fire==0.5.0"
