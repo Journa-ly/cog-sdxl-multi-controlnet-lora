@@ -6,7 +6,7 @@ trained-model
 temp
 temp_in
 cache
-.cog
+.cog/
 __pycache__
 wandb
 ft*
@@ -22,3 +22,4 @@ weights
 __*.zip
 **-cache
 .env
+journa_models

@@ -3,7 +3,7 @@ import os
 from diffusers import DiffusionPipeline
 from dataset_and_utils import TokenEmbeddingsHandler
 from weights import WeightsDownloadCache
-import peft
+from cog import Path
 
 
 class WeightsManager:
@@ -16,29 +16,35 @@ class WeightsManager:
     def is_url(self, path):
         return path.startswith("http://") or path.startswith("https://")
 
-    def set_lora_scales(self, scales):
-        self.lora_scales.update(scales)
-        self.apply_lora_scales()
+    def apply_lora_scales(self, adapter_name, scale):
+        self.predictor.txt2img_pipe.set_adapters(adapter_name, scale)
 
-    def apply_lora_scales(self):
-        self.predictor.txt2img_pipe.set_adapters(self.adapters, self.lora_scales)
+    def is_adapter_loaded(self, adapter_name):
+        active_adapters = self.predictor.txt2img_pipe.get_active_adapters()
+        return adapter_name in active_adapters
 
     def load_lora_weight(self, weight, scale, adapter_name):
+        if self.is_adapter_loaded(adapter_name):
+            print(f"Adapter {adapter_name} is already loaded. Skipping.")
+            print(
+                f"DEBUG - Here are the currently loaded LoRAs: {self.predictor.txt2img_pipe.get_active_adapters()}"
+            )
+            return
+
         if self.is_url(weight):
-            local_weights_cache = self.weights_cache.ensure(weight)
+            remote_weight = self.weights_cache.ensure(weight)
         else:
-            local_weights_cache = weight
+            print(f"Loading LoRA weight: {weight} with adapter name: {adapter_name}")
 
-        self.predictor.txt2img_pipe.load_lora_weights(
-            local_weights_cache, adapter_name=adapter_name
-        )
-        self.lora_scales[adapter_name] = scale
-        self.adapters.append(adapter_name)
-        self.apply_lora_scales()
+            # Load the LoRA weights
+            self.predictor.txt2img_pipe.load_lora_weights(
+                pretrained_model_name_or_path_or_dict=weight,
+                adapter_name=adapter_name,
+            )
 
-    def load_trained_weights(self, weights_list, scales_list):
-        for weights, scale in zip(weights_list, scales_list):
-            adapter_name = os.path.basename(weights).split(".")[0]
-            self.load_lora_weight(weights, scale, adapter_name)
+            # Set the scale for the adapter
+            self.apply_lora_scales(adapter_name, scale)
 
+    def load_trained_weights(self, weight, scale, adapter_name):
+        self.load_lora_weight(weight, scale, adapter_name)
         self.predictor.is_lora = True
