@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journa-mvp
+  labels:
+    app: text2img
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: text2img
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: text2img
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: gpu
+                    operator: In
+                    values:
+                      - t4
+    spec:
+      containers:
+        - name: journa-mvp
+          image: journa.azurecr.io/mvp/journa-mvp-0-1
+          terminationMessagePolicy: File
+          ports:
+            - name: api
+              containerPort: 5000
+              protocol: TCP

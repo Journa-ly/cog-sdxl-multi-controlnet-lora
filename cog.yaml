@@ -27,11 +27,13 @@ build:
     - "mediapipe==0.10.8"
     - "azure-storage-blob>=12.19.1"
     - "python-dotenv>=1.0.1"
+    - "celery>=5.4.0"
 
   run:
     - curl -o /usr/local/bin/pget -L "https://github.com/replicate/pget/releases/latest/download/pget_$(uname -s)_$(uname -m)" && chmod +x /usr/local/bin/pget
     - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
     - wget -O face_landmarker_v2_with_blendshapes.task -q "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    - celery - A tasks worker --loglevel=INFO &
     - command: . /run/secrets/env 
       mounts:
         - type: secret

@@ -5,6 +5,8 @@ import time
 import torch
 import numpy as np
 from diffusers import DiffusionPipeline
+from celery import Celery
+import multiprocessing
 
 from diffusers import (
     DDIMScheduler,
@@ -37,6 +39,21 @@ logging.basicConfig(level=logging.INFO)
 
 # Load environment variables from the .env file
 load_dotenv()
+
+# Set up Celery
+celery_app = Celery(
+    "sdxl_tasks",
+    broker=f'amqp://{os.getenv("RABBITMQ_USER")}:{os.getenv("RABBITMQ_PASS")}@{os.getenv("RABBITMQ_HOST")}:{os.getenv("RABBITMQ_PORT")}',
+)
+
+# Configure Celery
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+)
 
 # Retrieve the token from the environment variables
 hf_token = os.getenv("HF_TOKEN")
@@ -116,6 +133,12 @@ class Predictor(BasePredictor):
         self.tuned_weights = None
         if str(weights) == "weights":
             weights = None
+
+        # Celery setup
+        self.setup_celery()
+
+        # Start Celery worker
+        self.start_celery_worker()
 
         print("Loading safety checker...")
         WeightsDownloader.download_if_not_exists(SAFETY_URL, SAFETY_CACHE)
@@ -201,6 +224,51 @@ class Predictor(BasePredictor):
             clip_input=safety_checker_input.pixel_values.to(torch.float16),
         )
         return image, has_nsfw_concept
+
+    # @celery_app.task(name='execute_prediction')
+    # def execute_prediction(**kwargs):
+    #     predictor = Predictor()
+    #     predictor.setup()
+    #     return predictor.predict(**kwargs)
+
+    def setup_celery(self):
+        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672")
+        RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+        RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+
+        self.celery_app = Celery(
+            "sdxl_tasks",
+            broker=f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}:{RABBITMQ_PORT}",
+        )
+
+        self.celery_app.conf.update(
+            task_serializer="json",
+            accept_content=["json"],
+            result_serializer="json",
+            timezone="UTC",
+            enable_utc=True,
+        )
+
+        @self.celery_app.task(name="execute_prediction")
+        def execute_prediction(**kwargs):
+            return self.predict(**kwargs)
+
+    def start_celery_worker(self):
+        def run_worker():
+            self.celery_app.worker_main(
+                ["worker", "--loglevel=info", "--concurrency=1"]
+            )
+
+        self.worker_process = multiprocessing.Process(target=run_worker)
+        self.worker_process.start()
+        print("Celery worker started")
+
+    def cleanup(self):
+        if hasattr(self, "worker_process"):
+            self.worker_process.terminate()
+            self.worker_process.join()
+            print("Celery worker stopped")
 
     @torch.inference_mode()
     def predict(
