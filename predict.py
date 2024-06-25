@@ -7,6 +7,8 @@ import numpy as np
 from diffusers import DiffusionPipeline
 from celery import Celery
 import multiprocessing
+import requests
+from tqdm import tqdm
 
 from diffusers import (
     DDIMScheduler,
@@ -39,6 +41,96 @@ logging.basicConfig(level=logging.INFO)
 
 # Load environment variables from the .env file
 load_dotenv()
+
+SDXL_NAME_TO_PATHLIKE = {
+    # These are all huggingface models that we host via gcp + pget
+    "stable-diffusion-xl-base-1.0": {
+        "slug": "stabilityai/stable-diffusion-xl-base-1.0",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stabilityai--stable-diffusion-xl-base-1.0.tar",
+        "path": "checkpoints/models--stabilityai--stable-diffusion-xl-base-1.0",
+    },
+    "afrodite-xl-v2": {
+        "slug": "stablediffusionapi/afrodite-xl-v2",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--afrodite-xl-v2.tar",
+        "path": "checkpoints/models--stablediffusionapi--afrodite-xl-v2",
+    },
+    "albedobase-xl-20": {
+        "slug": "stablediffusionapi/albedobase-xl-20",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--albedobase-xl-20.tar",
+        "path": "checkpoints/models--stablediffusionapi--albedobase-xl-20",
+    },
+    "albedobase-xl-v13": {
+        "slug": "stablediffusionapi/albedobase-xl-v13",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--albedobase-xl-v13.tar",
+        "path": "checkpoints/models--stablediffusionapi--albedobase-xl-v13",
+    },
+    "animagine-xl-30": {
+        "slug": "stablediffusionapi/animagine-xl-30",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--animagine-xl-30.tar",
+        "path": "checkpoints/models--stablediffusionapi--animagine-xl-30",
+    },
+    "anime-art-diffusion-xl": {
+        "slug": "stablediffusionapi/anime-art-diffusion-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--anime-art-diffusion-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--anime-art-diffusion-xl",
+    },
+    "anime-illust-diffusion-xl": {
+        "slug": "stablediffusionapi/anime-illust-diffusion-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--anime-illust-diffusion-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--anime-illust-diffusion-xl",
+    },
+    "dreamshaper-xl": {
+        "slug": "stablediffusionapi/dreamshaper-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--dreamshaper-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--dreamshaper-xl",
+    },
+    "dynavision-xl-v0610": {
+        "slug": "stablediffusionapi/dynavision-xl-v0610",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--dynavision-xl-v0610.tar",
+        "path": "checkpoints/models--stablediffusionapi--dynavision-xl-v0610",
+    },
+    "guofeng4-xl": {
+        "slug": "stablediffusionapi/guofeng4-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--guofeng4-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--guofeng4-xl",
+    },
+    "juggernaut-xl-v8": {
+        "slug": "stablediffusionapi/juggernaut-xl-v8",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--juggernaut-xl-v8.tar",
+        "path": "checkpoints/models--stablediffusionapi--juggernaut-xl-v8",
+    },
+    "nightvision-xl-0791": {
+        "slug": "stablediffusionapi/nightvision-xl-0791",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--nightvision-xl-0791.tar",
+        "path": "checkpoints/models--stablediffusionapi--nightvision-xl-0791",
+    },
+    "omnigen-xl": {
+        "slug": "stablediffusionapi/omnigen-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--omnigen-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--omnigen-xl",
+    },
+    "pony-diffusion-v6-xl": {
+        "slug": "stablediffusionapi/pony-diffusion-v6-xl",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--pony-diffusion-v6-xl.tar",
+        "path": "checkpoints/models--stablediffusionapi--pony-diffusion-v6-xl",
+    },
+    "protovision-xl-high-fidel": {
+        "slug": "stablediffusionapi/protovision-xl-high-fidel",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--stablediffusionapi--protovision-xl-high-fidel.tar",
+        "path": "checkpoints/models--stablediffusionapi--protovision-xl-high-fidel",
+    },
+    "RealVisXL_V3.0_Turbo": {
+        "slug": "SG161222/RealVisXL_V3.0_Turbo",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--SG161222--RealVisXL_V3.0_Turbo.tar",
+        "path": "checkpoints/models--SG161222--RealVisXL_V3.0_Turbo",
+    },
+    "RealVisXL_V4.0_Lightning": {
+        "slug": "SG161222/RealVisXL_V4.0_Lightning",
+        "url": "https://weights.replicate.delivery/default/InstantID/models--SG161222--RealVisXL_V4.0_Lightning.tar",
+        "path": "checkpoints/models--SG161222--RealVisXL_V4.0_Lightning",
+    },
+}
+
 
 # Set up Celery
 celery_app = Celery(
@@ -104,6 +196,56 @@ class Predictor(BasePredictor):
     def load_trained_weights(self, weights_list, id_list):
         self.weights_manager.load_trained_weights(weights_list, id_list)
 
+    def load_checkpoints(self, sdxl_weights):
+        self.base_weights = sdxl_weights
+        weights_info = SDXL_NAME_TO_PATHLIKE[self.base_weights]
+        download_url = weights_info["url"]
+        path_to_weights_dir = weights_info["path"]
+        if not os.path.exists(path_to_weights_dir):
+            self.download_weights(download_url, path_to_weights_dir)
+
+        is_hugging_face_model = "slug" in weights_info
+        path_to_weights_file = os.path.join(
+            path_to_weights_dir,
+            weights_info.get("file", ""),
+        )
+        print(f"[~] Loading new SDXL weights: {path_to_weights_file}")
+
+        if is_hugging_face_model:
+            self.txt2img_pipe = StableDiffusionXLPipeline.from_pretrained(
+                weights_info["slug"],
+                torch_dtype=torch.float16,
+                use_safetensors=True,
+                variant="fp16",
+            ).to("cuda")
+        else:
+            self.txt2img_pipe.load_attn_procs(path_to_weights_file)
+
+        # Update other pipelines
+        self.img2img_pipe.unet = self.txt2img_pipe.unet
+        self.inpaint_pipe.unet = self.txt2img_pipe.unet
+
+        # Update scheduler
+        self.txt2img_pipe.scheduler = diffusers.EulerDiscreteScheduler.from_config(
+            self.txt2img_pipe.scheduler.config
+        )
+
+    def download_weights(self, url, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get("content-length", 0))
+
+        with open(path, "wb") as file, tqdm(
+            desc=path,
+            total=total_size,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as progress_bar:
+            for data in response.iter_content(chunk_size=1024):
+                size = file.write(data)
+                progress_bar.update(size)
+
     def build_controlnet_pipeline(self, pipeline_class, controlnet_models):
         pipe = pipeline_class.from_pretrained(
             SDXL_MODEL_CACHE,
@@ -131,14 +273,9 @@ class Predictor(BasePredictor):
         self.weights_manager = WeightsManager(self)
         self.tuned_model = False
         self.tuned_weights = None
+        self.base_weights = "stable-diffusion-xl-base-1.0"
         if str(weights) == "weights":
             weights = None
-
-        # Celery setup
-        self.setup_celery()
-
-        # Start Celery worker
-        self.start_celery_worker()
 
         print("Loading safety checker...")
         WeightsDownloader.download_if_not_exists(SAFETY_URL, SAFETY_CACHE)
@@ -254,21 +391,28 @@ class Predictor(BasePredictor):
         def execute_prediction(**kwargs):
             return self.predict(**kwargs)
 
-    def start_celery_worker(self):
-        def run_worker():
-            self.celery_app.worker_main(
-                ["worker", "--loglevel=info", "--concurrency=1"]
-            )
+    def run_celery_worker():
+        predictor = Predictor()
+        predictor.setup()
 
-        self.worker_process = multiprocessing.Process(target=run_worker)
-        self.worker_process.start()
-        print("Celery worker started")
+        celery_app = Celery(
+            "sdxl_tasks",
+            broker=f"amqp://{os.getenv('RABBITMQ_USER')}:{os.getenv('RABBITMQ_PASS')}@{os.getenv('RABBITMQ_HOST')}:{os.getenv('RABBITMQ_PORT')}",
+        )
 
-    def cleanup(self):
-        if hasattr(self, "worker_process"):
-            self.worker_process.terminate()
-            self.worker_process.join()
-            print("Celery worker stopped")
+        celery_app.conf.update(
+            task_serializer="json",
+            accept_content=["json"],
+            result_serializer="json",
+            timezone="UTC",
+            enable_utc=True,
+        )
+
+        @celery_app.task(name="execute_prediction")
+        def execute_prediction(**kwargs):
+            return predictor.predict(**kwargs)
+
+        celery_app.worker_main(["worker", "--loglevel=info", "--concurrency=1"])
 
     @torch.inference_mode()
     def predict(
@@ -300,6 +444,29 @@ class Predictor(BasePredictor):
         ),
         num_outputs: int = Input(
             description="Number of images to output", ge=1, le=16, default=1
+        ),
+        sdxl_checkpoint: str = Input(
+            description="Pick which base weights you want to use",
+            default="stable-diffusion-xl-base-1.0",
+            choices=[
+                "stable-diffusion-xl-base-1.0",
+                "juggernaut-xl-v8",
+                "afrodite-xl-v2",
+                "albedobase-xl-20",
+                "albedobase-xl-v13",
+                "animagine-xl-30",
+                "anime-art-diffusion-xl",
+                "anime-illust-diffusion-xl",
+                "dreamshaper-xl",
+                "dynavision-xl-v0610",
+                "guofeng4-xl",
+                "nightvision-xl-0791",
+                "omnigen-xl",
+                "pony-diffusion-v6-xl",
+                "protovision-xl-high-fidel",
+                "RealVisXL_V3.0_Turbo",
+                "RealVisXL_V4.0_Lightning",
+            ],
         ),
         scheduler: str = Input(
             description="scheduler", choices=SCHEDULERS.keys(), default="K_EULER"
@@ -431,6 +598,10 @@ class Predictor(BasePredictor):
     ) -> List[Path]:
         """Run a single prediction on the model."""
         predict_start = time.time()
+
+        # Load the checkpoints if they are different from the base weights
+        if sdxl_checkpoint != self.base_weights:
+            self.txt2img_pipe.load_checkpointsx(sdxl_checkpoint)
 
         if seed is None:
             seed = int.from_bytes(os.urandom(2), "big")
