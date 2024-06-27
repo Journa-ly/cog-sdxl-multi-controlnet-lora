@@ -5,10 +5,6 @@ import time
 import torch
 import numpy as np
 from diffusers import DiffusionPipeline
-from celery import Celery
-import multiprocessing
-import requests
-from tqdm import tqdm
 
 from diffusers import (
     DDIMScheduler,
@@ -130,22 +126,6 @@ SDXL_NAME_TO_PATHLIKE = {
         "path": "checkpoints/models--SG161222--RealVisXL_V4.0_Lightning",
     },
 }
-
-
-# Set up Celery
-celery_app = Celery(
-    "sdxl_tasks",
-    broker=f'amqp://{os.getenv("RABBITMQ_USER")}:{os.getenv("RABBITMQ_PASS")}@{os.getenv("RABBITMQ_HOST")}:{os.getenv("RABBITMQ_PORT")}',
-)
-
-# Configure Celery
-celery_app.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
-)
 
 # Retrieve the token from the environment variables
 hf_token = os.getenv("HF_TOKEN")
@@ -277,6 +257,13 @@ class Predictor(BasePredictor):
         if str(weights) == "weights":
             weights = None
 
+        # # Start Celery worker
+        # try:
+        #     worker = self.celery_app.Worker()
+        #     worker.start()
+        # except Exception as e:
+        #     logging.error("Failed to start celery: {e}")
+
         print("Loading safety checker...")
         WeightsDownloader.download_if_not_exists(SAFETY_URL, SAFETY_CACHE)
 
@@ -331,12 +318,6 @@ class Predictor(BasePredictor):
 
         self.controlnet = ControlNet(self)
 
-        # self.is_lora = False
-        # # Check if weights is not None or the string "weights"
-        # if weights and weights != "weights":
-        #     self.load_trained_weights([weights], [1.0], ["baseLoraDefaultID"])
-        #     print(f"Successfully loaded: {weights}")
-
         # Download and load Journa LoRA weights if specified
         try:
             blob_service_client = WeightsDownloader.get_blob_service_client_sas(
@@ -361,58 +342,6 @@ class Predictor(BasePredictor):
             clip_input=safety_checker_input.pixel_values.to(torch.float16),
         )
         return image, has_nsfw_concept
-
-    # @celery_app.task(name='execute_prediction')
-    # def execute_prediction(**kwargs):
-    #     predictor = Predictor()
-    #     predictor.setup()
-    #     return predictor.predict(**kwargs)
-
-    def setup_celery(self):
-        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
-        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672")
-        RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
-        RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
-
-        self.celery_app = Celery(
-            "sdxl_tasks",
-            broker=f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}:{RABBITMQ_PORT}",
-        )
-
-        self.celery_app.conf.update(
-            task_serializer="json",
-            accept_content=["json"],
-            result_serializer="json",
-            timezone="UTC",
-            enable_utc=True,
-        )
-
-        @self.celery_app.task(name="execute_prediction")
-        def execute_prediction(**kwargs):
-            return self.predict(**kwargs)
-
-    def run_celery_worker():
-        predictor = Predictor()
-        predictor.setup()
-
-        celery_app = Celery(
-            "sdxl_tasks",
-            broker=f"amqp://{os.getenv('RABBITMQ_USER')}:{os.getenv('RABBITMQ_PASS')}@{os.getenv('RABBITMQ_HOST')}:{os.getenv('RABBITMQ_PORT')}",
-        )
-
-        celery_app.conf.update(
-            task_serializer="json",
-            accept_content=["json"],
-            result_serializer="json",
-            timezone="UTC",
-            enable_utc=True,
-        )
-
-        @celery_app.task(name="execute_prediction")
-        def execute_prediction(**kwargs):
-            return predictor.predict(**kwargs)
-
-        celery_app.worker_main(["worker", "--loglevel=info", "--concurrency=1"])
 
     @torch.inference_mode()
     def predict(
