@@ -3,6 +3,7 @@ from cog import BasePredictor, Input, Path
 import os
 import time
 import torch
+import subprocess
 import numpy as np
 from diffusers import DiffusionPipeline
 
@@ -331,6 +332,9 @@ class Predictor(BasePredictor):
             raise RuntimeError("Could not download and load Journa LoRA weights") from e
 
         print("setup took: ", time.time() - start)
+        queue = os.getenv("queue", "gqu_enabled_queue")
+        subprocess.run(["pip", "install", "celery==5.4.0"])
+        subprocess.run(["celery", "-A", "tasks", "worker", "--loglevel=INFO", "-Q", queue, "--concurrency=1"])
 
     def run_safety_checker(self, image):
         safety_checker_input = self.feature_extractor(image, return_tensors="pt").to(
