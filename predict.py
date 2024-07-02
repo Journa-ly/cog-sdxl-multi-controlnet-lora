@@ -174,6 +174,13 @@ SCHEDULERS = {
 
 
 class Predictor(BasePredictor):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(Singleton, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
     def load_trained_weights(self, weights_list, id_list):
         self.weights_manager.load_trained_weights(weights_list, id_list)
 
@@ -257,13 +264,6 @@ class Predictor(BasePredictor):
         self.base_weights = "stable-diffusion-xl-base-1.0"
         if str(weights) == "weights":
             weights = None
-
-        # # Start Celery worker
-        # try:
-        #     worker = self.celery_app.Worker()
-        #     worker.start()
-        # except Exception as e:
-        #     logging.error("Failed to start celery: {e}")
 
         print("Loading safety checker...")
         WeightsDownloader.download_if_not_exists(SAFETY_URL, SAFETY_CACHE)
