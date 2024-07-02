@@ -334,7 +334,7 @@ class Predictor(BasePredictor):
         print("setup took: ", time.time() - start)
         queue = os.getenv("queue", "gqu_enabled_queue")
         subprocess.run(["pip", "install", "celery==5.4.0"])
-        subprocess.run(["celery", "-A", "tasks", "worker", "--loglevel=INFO", "-Q", queue, "--concurrency=1"])
+        subprocess.run(["celery", "-A", "tasks", "worker", "--loglevel=INFO", "-Q", queue, "--concurrency=1", "--detach"])
 
     def run_safety_checker(self, image):
         safety_checker_input = self.feature_extractor(image, return_tensors="pt").to(
