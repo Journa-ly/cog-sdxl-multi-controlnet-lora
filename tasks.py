@@ -17,5 +17,9 @@ app = Celery(
 def generate_image(self, payload, **kwargs):
     print("Payload:", payload)
 
-    response = requests.post("http://127.0.0.1:5000/predictions", json=payload)
+    input = {
+        "input": payload
+    }
+
+    response = requests.post("http://127.0.0.1:5000/predictions", json=input)
     return response.json()
