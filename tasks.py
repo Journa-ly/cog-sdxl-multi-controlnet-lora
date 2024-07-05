@@ -1,11 +1,12 @@
 import os
+import requests
 from celery import Celery, shared_task
-from predict import Predictor
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+
 
 app = Celery(
     'tasks',
@@ -14,6 +15,11 @@ app = Celery(
 
 @shared_task(bind=True, queue="gqu_enabled_queue")
 def generate_image(self, payload, **kwargs):
-    predictor = Predictor()
-    output = predictor.predict(**payload)
-    return output
+    print("Payload:", payload)
+
+    input = {
+        "input": payload
+    }
+
+    response = requests.post("http://127.0.0.1:5000/predictions", json=input)
+    return response.json()

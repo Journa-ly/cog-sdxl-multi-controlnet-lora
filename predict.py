@@ -174,6 +174,13 @@ SCHEDULERS = {
 
 
 class Predictor(BasePredictor):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(Predictor, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+
     def load_trained_weights(self, weights_list, id_list):
         self.weights_manager.load_trained_weights(weights_list, id_list)
 
@@ -258,13 +265,6 @@ class Predictor(BasePredictor):
         if str(weights) == "weights":
             weights = None
 
-        # # Start Celery worker
-        # try:
-        #     worker = self.celery_app.Worker()
-        #     worker.start()
-        # except Exception as e:
-        #     logging.error("Failed to start celery: {e}")
-
         print("Loading safety checker...")
         WeightsDownloader.download_if_not_exists(SAFETY_URL, SAFETY_CACHE)
 
@@ -334,7 +334,7 @@ class Predictor(BasePredictor):
         print("setup took: ", time.time() - start)
         queue = os.getenv("queue", "gqu_enabled_queue")
         subprocess.run(["pip", "install", "celery==5.4.0"])
-        subprocess.run(["celery", "-A", "tasks", "worker", "--loglevel=INFO", "-Q", queue, "--concurrency=1"])
+        subprocess.run(["celery", "-A", "tasks", "worker", "--loglevel=INFO", "-Q", queue, "--concurrency=1", "--detach"])
 
     def run_safety_checker(self, image):
         safety_checker_input = self.feature_extractor(image, return_tensors="pt").to(
